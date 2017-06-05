@@ -41,9 +41,12 @@ use warnings;
 use feature 'say';
 use Term::ANSIColor qw(colored);
 
-my @ack_args = parse_args(@ARGV);
-search_file($_) for select_files(@ack_args);
-exit 0;
+{
+    my @ack_args = parse_args(@ARGV);
+    my @files = select_files(@ack_args);
+    search_file($_) for @files;
+    exit 0;
+}
 
 sub parse_args {
     ARGUMENT:
@@ -61,6 +64,7 @@ sub parse_args {
                 shift;
                 last ARGUMENT;
             }
+            last ARGUMENT;
         }
     }
     return @_;

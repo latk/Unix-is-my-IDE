@@ -1,0 +1,130 @@
+#!/usr/bin/perl
+use constant VERSION_TEXT => <<"END_VERSION";
+find-todo v0.1.0 - find TODO comments in your code
+
+Copyright 2017 Lukas Atkinson
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+END_VERSION
+
+use constant USAGE_TEXT => <<"END_USAGE";
+USAGE: $0 [OPTIONS] [--] [ACK_ARGS...]
+
+This script searches through the given files for TODO comments.  A TODO comment
+is any line that includes "TODO", "FIXME", or "XXX".  Yes, there will be false
+positives.  For each occurrence, the location and context is printed and
+color-highlighted.
+
+ACK_ARGS:
+    To select which files are searched, you can specify command line arguments
+    which are then passed to ack-grep, so read the Ack docs for acceptable
+    flags. For example, "--perl" will only search Perl source files.
+
+OPTIONS:
+    -h, --help      - print this message
+    -v, --version   - print version and license information
+END_USAGE
+
+use strict;
+use warnings;
+use feature 'say';
+use Term::ANSIColor qw(colored);
+
+my @ack_args = parse_args(@ARGV);
+search_file($_) for select_files(@ack_args);
+exit 0;
+
+sub parse_args {
+    ARGUMENT:
+    while (@_) {
+        for ($_[0]) {
+            if (/^(?: -h | --help )$/x) {
+                say STDOUT USAGE_TEXT;
+                exit 0;
+            }
+            if (/^(?: -v | --version )$/x) {
+                say STDOUT VERSION_TEXT;
+                exit 0;
+            }
+            if (/^ -- $/x) {
+                shift;
+                last ARGUMENT;
+            }
+        }
+    }
+    return @_;
+}
+
+sub select_files {
+    my (@args) = @_;
+
+    my @ack_command = ('/usr/bin/ack-grep', '-f', @args);
+    open my $ack, '-|', @ack_command
+        or die "$0: Can't run ack: $!\n(Command was: @ack_command)\n";
+    my @files = map { chomp; $_ } <$ack>;
+    close $ack
+        or die "$0: ack failed: $!\n";
+    return @files;
+}
+
+sub search_file {
+    my ($file) = @_;
+
+    open my $fh, '<', $file
+        or die qq($0: Can't open file "$file": $!\n);
+
+    # What is context? Context helps us understand where the to-do comment is,
+    # what it is about. A single comment on its own is often not helpful.
+    # We distinguish between preceding context and trailing context.
+    my $wantcontext = 0;
+    my $context;
+
+    while (<$fh>) {
+        chomp;
+
+        # Print this line trailing context if requested.
+        say qq(| $_) if $wantcontext;
+        # Stop requesting context when a line contains non-whitespace.
+        $wantcontext = 0 if $wantcontext and /\S/;
+
+        if (my ($pre, $match) = /(.*?)(\b(?:TODO|XXX|FIXME)\b.*)/) {
+            say colored(['bold bright_white'] => $file), ":$.:\n",
+                (length $context ? qq(| $context\n) : q()),
+                "| $pre", colored(['red'] => $match);
+
+            # If this comment looks like the first thing on the line,
+            # then request trailing context.
+            # Otherwise the $pre stuff is enough context.
+            $wantcontext = $pre !~ /\w/
+        }
+
+        # Possibly store this line as preceding context.
+        #
+        # The context is the last line without indentation. For programming
+        # languages, this ought to be the last top-level declaration. As a
+        # special case, a closing brace "}" is not permitted as context.
+        if (/^\S/ and not /^\}$/) {
+            $context = $_;
+        }
+        else {
+            # If the context already contains multiple lines,
+            # replace last line with ellipsis instead of adding more lines.
+            $context =~ s/\n\|.*$/\n:/;
+
+            # If the context contains no extra lines,
+            # add the current line to the context.
+            $context .= "\n| $_" if $context !~ /\n:/;
+        }
+    }
+}

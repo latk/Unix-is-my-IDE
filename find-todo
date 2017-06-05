@@ -104,7 +104,7 @@ sub search_file {
 
         if (my ($pre, $match) = /(.*?)(\b(?:TODO|XXX|FIXME)\b.*)/) {
             say colored(['bold bright_white'] => $file), ":$.:\n",
-                (length $context ? qq(| $context\n) : q()),
+                (length $context ? qq($context\n) : q()),
                 "| $pre", colored(['red'] => $match);
 
             # If this comment looks like the first thing on the line,
@@ -119,9 +119,9 @@ sub search_file {
         # languages, this ought to be the last top-level declaration. As a
         # special case, a closing brace "}" is not permitted as context.
         if (/^\S/ and not /^\}$/) {
-            $context = $_;
+            $context = "| $_";
         }
-        else {
+        elsif (length $context) {
             # If the context already contains multiple lines,
             # replace last line with ellipsis instead of adding more lines.
             $context =~ s/\n\|.*$/\n:/;
